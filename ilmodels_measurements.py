@@ -537,4 +537,3 @@ if __name__ == "__main__":
     if IS_LOCAL:
         threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
     app.run(debug=False, port=PORT, host="0.0.0.0")
-זה 
