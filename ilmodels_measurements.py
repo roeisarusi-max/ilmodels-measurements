@@ -244,8 +244,8 @@ header #count-header { font-size: 13px; opacity: 0.65; }
     <div class="divider"></div>
 
     <div class="tolerance-row">
-      <label>⚡ טווח זליגה (±)</label>
-      <input type="number" id="f-tolerance" value="1" min="0" step="0.5">
+      <label>⚡ טווח זליגה (±)<br><small style="font-weight:400;color:#a07000">ס"מ: 2–5 | גובה במטרים: 0.03</small></label>
+      <input type="number" id="f-tolerance" value="3" min="0" step="0.01">
     </div>
 
     <div class="filter-group">
@@ -361,7 +361,8 @@ async function loadData() {
 
 function applyFilters() {
   const name      = document.getElementById('f-name').value.trim().toLowerCase();
-  const tolerance = parseFloat(document.getElementById('f-tolerance').value) || 1;
+  const toleranceRaw = document.getElementById('f-tolerance').value;
+  const tolerance = toleranceRaw === '' ? 3 : (isNaN(parseFloat(toleranceRaw)) ? 3 : parseFloat(toleranceRaw));
   const heightT   = parseFloat(document.getElementById('f-height').value)  || null;
   const bustT     = parseFloat(document.getElementById('f-bust').value)    || null;
   const waistT    = parseFloat(document.getElementById('f-waist').value)   || null;
@@ -513,7 +514,7 @@ function renderResults(results) {
 function resetFilters() {
   document.querySelectorAll('input[type=text], input[type=number], select')
     .forEach(el => { if (el.id !== 'f-tolerance') el.value = ''; });
-  document.getElementById('f-tolerance').value = '1';
+  document.getElementById('f-tolerance').value = '3';
   applyFilters();
 }
 
@@ -536,3 +537,4 @@ if __name__ == "__main__":
     if IS_LOCAL:
         threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
     app.run(debug=False, port=PORT, host="0.0.0.0")
+זה 
