@@ -10,23 +10,27 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f5f5f5; color: #
 header { background: #1a1a2e; color: white; padding: 16px 28px; }
 header h1 { font-size: 20px; font-weight: 700; }
 .main { display: flex; min-height: calc(100vh - 56px); }
-.sidebar { width: 320px; background: white; border-left: 1px solid #e0e0e0; padding: 16px; overflow-y: auto; max-height: calc(100vh - 56px); }
-.sidebar h2 { font-size: 11px; color: #999; margin-top: 16px; margin-bottom: 8px; text-transform: uppercase; }
-.filter-group { margin-bottom: 10px; }
-.filter-group label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
-.filter-group input, .filter-group select { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
-.btn-search { width: 100%; padding: 8px; background: #1a1a2e; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; margin-top: 12px; }
+.sidebar { width: 360px; background: white; border-left: 1px solid #e0e0e0; padding: 16px; overflow-y: auto; max-height: calc(100vh - 56px); }
+.sidebar h2 { font-size: 11px; color: #999; margin-top: 14px; margin-bottom: 8px; text-transform: uppercase; font-weight: 700; }
+.sidebar h2:first-of-type { margin-top: 0; }
+.filter-group { margin-bottom: 9px; }
+.filter-group label { display: block; font-size: 11px; font-weight: 600; color: #555; margin-bottom: 3px; }
+.filter-group input, .filter-group select { width: 100%; padding: 5px 7px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
+.tolerance-group { font-size: 10px; color: #888; margin-top: 2px; }
+.btn-search { width: 100%; padding: 8px; background: #1a1a2e; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; margin-top: 12px; font-weight: 600; }
 .btn-reset { width: 100%; padding: 6px; background: #f0f0f0; color: #666; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; margin-top: 6px; }
-.btn-export { width: 100%; padding: 6px; background: #2e7d32; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; margin-top: 6px; }
+.btn-export { width: 100%; padding: 6px; background: #2e7d32; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; margin-top: 6px; font-weight: 600; }
 .btn-export:disabled { background: #ccc; cursor: not-allowed; }
 .results { flex: 1; padding: 20px; overflow-y: auto; }
 .results-header { font-size: 13px; color: #888; margin-bottom: 14px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-.card { background: white; border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 2px solid #ececec; position: relative; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.card { background: white; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 2px solid #ececec; position: relative; }
 .card-checkbox { position: absolute; top: 10px; right: 10px; width: 18px; height: 18px; cursor: pointer; }
-.card-name { font-size: 14px; font-weight: 700; color: #1a1a2e; margin-bottom: 8px; margin-top: 20px; }
-.card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px; }
-.card-field .lbl { color: #999; margin-bottom: 1px; }
+.card-name { font-size: 14px; font-weight: 700; color: #1a1a2e; margin-bottom: 8px; margin-top: 18px; cursor: pointer; }
+.card-name a { color: #1a73e8; text-decoration: underline; }
+.card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 10px; }
+.card-field { display: flex; flex-direction: column; }
+.card-field .lbl { color: #999; margin-bottom: 2px; font-size: 9px; text-transform: uppercase; }
 .card-field .val { font-weight: 600; color: #333; }
 .state-msg { text-align: center; padding: 60px 20px; color: #aaa; }
 .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
@@ -34,36 +38,81 @@ header h1 { font-size: 20px; font-weight: 700; }
 .modal-content { background: white; padding: 25px; border-radius: 10px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto; }
 .modal-close { float: right; font-size: 24px; cursor: pointer; font-weight: bold; }
 .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 15px; clear: both; }
-.modal-links { font-family: monospace; font-size: 11px; line-height: 1.6; background: #f5f5f5; padding: 12px; border-radius: 5px; border: 1px solid #ddd; }
+.modal-links { font-family: monospace; font-size: 11px; line-height: 1.6; background: #f5f5f5; padding: 12px; border-radius: 5px; border: 1px solid #ddd; word-break: break-all; }
 .copy-btn { margin-top: 12px; padding: 8px 16px; background: #1a73e8; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
 </style>
 </head>
 <body>
-<header><h1>🗂 IL Models – מאגר מידות</h1></header>
+<header><h1>🗂 IL Models – סינון דוגמניות</h1></header>
 <div class="main">
   <div class="sidebar">
-    <h2>סינון</h2>
+    <h2>🔍 חיפוש בסיסי</h2>
     <div class="filter-group">
-      <label>🔍 שם</label>
-      <input type="text" id="f-name" placeholder="חיפוש...">
+      <label>שם</label>
+      <input type="text" id="f-name" placeholder="חפש לפי שם...">
     </div>
     
-    <h2>גובה ומידות</h2>
+    <h2>👤 גוף ומידות</h2>
     <div class="filter-group">
-      <label>גובה</label>
-      <input type="number" id="f-height" placeholder="174" step="0.1">
+      <label>גובה (ס"מ)</label>
+      <input type="number" id="f-height" placeholder="ל.ח: 174" step="0.1">
+      <div class="tolerance-group">דיוק: <span id="tolerance-height">0</span></div>
     </div>
     <div class="filter-group">
       <label>חזה (ס"מ)</label>
-      <input type="number" id="f-bust" placeholder="84">
+      <input type="number" id="f-bust" placeholder="ל.ח: 84" step="0.1">
     </div>
     <div class="filter-group">
       <label>מותן (ס"מ)</label>
-      <input type="number" id="f-waist" placeholder="64">
+      <input type="number" id="f-waist" placeholder="ל.ח: 64" step="0.1">
     </div>
     <div class="filter-group">
       <label>אגן (ס"מ)</label>
-      <input type="number" id="f-hips" placeholder="88">
+      <input type="number" id="f-hips" placeholder="ל.ח: 88" step="0.1">
+    </div>
+    <div class="filter-group">
+      <label>חזייה</label>
+      <input type="text" id="f-bra" placeholder="ל.ח: 75D">
+    </div>
+    <div class="filter-group">
+      <label>חולצה</label>
+      <input type="text" id="f-shirt" placeholder="ל.ח: XS">
+    </div>
+    <div class="filter-group">
+      <label>מכנסיים</label>
+      <input type="text" id="f-pants" placeholder="ל.ח: 26">
+    </div>
+    <div class="filter-group">
+      <label>נעליים</label>
+      <input type="text" id="f-shoe" placeholder="ל.ח: 37">
+    </div>
+    
+    <h2>🎨 פיזיותומי</h2>
+    <div class="filter-group">
+      <label>צבע עיניים</label>
+      <input type="text" id="f-eye-color" placeholder="ל.ח: כחול">
+    </div>
+    <div class="filter-group">
+      <label>צבע שיער</label>
+      <input type="text" id="f-hair-color" placeholder="ל.ח: חום">
+    </div>
+    
+    <h2>✨ מיוחד</h2>
+    <div class="filter-group">
+      <label>קעקועים</label>
+      <select id="f-tattoos">
+        <option value="">כל</option>
+        <option value="yes">יש</option>
+        <option value="no">אין</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>פירסינג באוזניים</label>
+      <select id="f-ear-piercings">
+        <option value="">כל</option>
+        <option value="yes">יש</option>
+        <option value="no">אין</option>
+      </select>
     </div>
     
     <button class="btn-search" onclick="applyFilters()">🔍 חפש</button>
@@ -72,7 +121,7 @@ header h1 { font-size: 20px; font-weight: 700; }
   </div>
 
   <div class="results">
-    <div class="results-header" id="results-header">טוען...</div>
+    <div class="results-header" id="results-header">⏳ טוען...</div>
     <div class="grid" id="grid"><div class="state-msg">⏳ טוען...</div></div>
   </div>
 </div>
@@ -97,36 +146,74 @@ async function loadData() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     allModels = data;
+    document.getElementById('results-header').textContent = allModels.length + ' דוגמניות בסך הכל';
     applyFilters();
   } catch(e) {
-    document.getElementById('grid').innerHTML = '<div class="state-msg">שגיאה: ' + e.message + '</div>';
+    document.getElementById('grid').innerHTML = '<div class="state-msg">❌ שגיאה: ' + e.message + '</div>';
   }
+}
+
+function matches(value, filter) {
+  if (!filter) return true;
+  if (!value) return false;
+  return value.toLowerCase().includes(filter.toLowerCase());
 }
 
 function applyFilters() {
   const name = document.getElementById('f-name').value.toLowerCase();
+  const height = parseFloat(document.getElementById('f-height').value) || null;
+  const bust = parseFloat(document.getElementById('f-bust').value) || null;
+  const waist = parseFloat(document.getElementById('f-waist').value) || null;
+  const hips = parseFloat(document.getElementById('f-hips').value) || null;
+  const bra = document.getElementById('f-bra').value;
+  const shirt = document.getElementById('f-shirt').value;
+  const pants = document.getElementById('f-pants').value;
+  const shoe = document.getElementById('f-shoe').value;
+  const eyeColor = document.getElementById('f-eye-color').value;
+  const hairColor = document.getElementById('f-hair-color').value;
+  const tattoos = document.getElementById('f-tattoos').value;
+  const earPiercings = document.getElementById('f-ear-piercings').value;
+  
   const results = allModels.filter(m => {
-    if (name && !(m.Name || m.שם || '').toLowerCase().includes(name)) return false;
+    if (name && !(m.Name || '').toLowerCase().includes(name)) return false;
+    if (height && Math.abs(parseFloat(m.Height || 0) - height) > 0) return false;
+    if (bust && Math.abs(parseFloat(m.Bust || 0) - bust) > 0) return false;
+    if (waist && Math.abs(parseFloat(m.Waist || 0) - waist) > 0) return false;
+    if (hips && Math.abs(parseFloat(m.Hips || 0) - hips) > 0) return false;
+    if (bra && !matches(m.Bra, bra)) return false;
+    if (shirt && !matches(m.Shirt, shirt)) return false;
+    if (pants && !matches(m.Pants, pants)) return false;
+    if (shoe && !matches(m.Shoe, shoe)) return false;
+    if (eyeColor && !matches(m.EyeColor, eyeColor)) return false;
+    if (hairColor && !matches(m.HairColor, hairColor)) return false;
+    if (tattoos === 'yes' && m.Tattoos !== 'כן') return false;
+    if (tattoos === 'no' && m.Tattoos === 'כן') return false;
+    if (earPiercings === 'yes' && m.EarPiercings !== 'כן') return false;
+    if (earPiercings === 'no' && m.EarPiercings === 'כן') return false;
     return true;
   });
   
   currentResults = results;
-  document.getElementById('results-header').textContent = results.length + ' דוגמניות';
+  document.getElementById('results-header').textContent = results.length + ' דוגמנית' + (results.length !== 1 ? 'ות' : 'ה');
   
   if (results.length === 0) {
-    document.getElementById('grid').innerHTML = '<div class="state-msg">לא נמצאו תוצאות</div>';
+    document.getElementById('grid').innerHTML = '<div class="state-msg">❌ לא נמצאו תוצאות</div>';
     return;
   }
   
   document.getElementById('grid').innerHTML = results.map((m, idx) => `
     <div class="card">
       <input type="checkbox" class="card-checkbox" data-idx="${idx}" onchange="updateSelection()">
-      <div class="card-name">${m.Name || m.שם}</div>
+      <div class="card-name"><a href="${m.URL}" target="_blank">${m.Name || 'ללא שם'}</a></div>
       <div class="card-grid">
-        <div><div class="lbl">גובה</div><div class="val">${m.Height || '—'}</div></div>
-        <div><div class="lbl">חזה</div><div class="val">${m.Bust || '—'}</div></div>
-        <div><div class="lbl">מותן</div><div class="val">${m.Waist || '—'}</div></div>
-        <div><div class="lbl">אגן</div><div class="val">${m.Hips || '—'}</div></div>
+        <div class="card-field"><div class="lbl">גובה</div><div class="val">${m.Height || '—'}</div></div>
+        <div class="card-field"><div class="lbl">חזה</div><div class="val">${m.Bust || '—'}</div></div>
+        <div class="card-field"><div class="lbl">מותן</div><div class="val">${m.Waist || '—'}</div></div>
+        <div class="card-field"><div class="lbl">אגן</div><div class="val">${m.Hips || '—'}</div></div>
+        <div class="card-field"><div class="lbl">חזייה</div><div class="val">${m.Bra || '—'}</div></div>
+        <div class="card-field"><div class="lbl">חולצה</div><div class="val">${m.Shirt || '—'}</div></div>
+        <div class="card-field"><div class="lbl">עיניים</div><div class="val">${m.EyeColor || '—'}</div></div>
+        <div class="card-field"><div class="lbl">שיער</div><div class="val">${m.HairColor || '—'}</div></div>
       </div>
     </div>
   `).join('');
@@ -145,8 +232,8 @@ function showLinks() {
   const links = [];
   selectedModels.forEach(idx => {
     const model = currentResults[idx];
-    if (model) {
-      links.push(`${model.Name || model.שם} - ${model.URL}`);
+    if (model && model.URL) {
+      links.push(model.URL);
     }
   });
   document.getElementById('linksText').textContent = links.join('\n');
@@ -159,7 +246,9 @@ function closeModal() {
 
 function copyToClipboard() {
   const text = document.getElementById('linksText').textContent;
-  navigator.clipboard.writeText(text).then(() => alert('✅ הועתק!'));
+  navigator.clipboard.writeText(text).then(() => {
+    alert('✅ הועתקו ' + text.split('\n').length + ' קישורים');
+  });
 }
 
 function resetFilters() {
