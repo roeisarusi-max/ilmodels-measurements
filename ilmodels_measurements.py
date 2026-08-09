@@ -4,13 +4,14 @@ from flask import Flask, jsonify, send_file
 from bs4 import BeautifulSoup
 
 app = Flask(__name__, static_folder='.', static_url_path='')
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 models_cache = []
 cache_lock = threading.Lock()
+scraping_status = {'status': 'initializing', 'count': 0}
 
-# Dummy data to show while loading
+# Dummy data
 DUMMY_MODELS = [
     {
         'Name': 'טוען דוגמניות...',
@@ -21,135 +22,125 @@ DUMMY_MODELS = [
     }
 ]
 
-def extract_measurements(text):
-    """Extract measurements from model page"""
-    measurements = {
-        'Height': '', 'Bust': '', 'Waist': '', 'Hips': '',
-        'Bra': '', 'Shirt': '', 'Pants': '', 'Shoe': '',
-        'EyeColor': '', 'HairColor': '', 'Tattoos': '', 'EarPiercings': ''
-    }
-
-    lines = text.split('\n')
-    for line in lines:
-        line_clean = line.strip()
-
-        # Measurement patterns
-        if 'Height' in line and '|' in line:
-            parts = line.split('|')
-            for part in parts:
-                part = part.strip()
-                if part.startswith('Height'):
-                    val = part.replace('Height', '').strip()
-                    measurements['Height'] = (val.split()[0] if val else '')
-                elif part.startswith('Bust'):
-                    val = part.replace('Bust', '').strip()
-                    measurements['Bust'] = (val.split()[0] if val else '')
-                elif part.startswith('Waist'):
-                    val = part.replace('Waist', '').strip()
-                    measurements['Waist'] = (val.split()[0] if val else '')
-                elif part.startswith('Hips'):
-                    val = part.replace('Hips', '').strip()
-                    measurements['Hips'] = (val.split()[0] if val else '')
-
-        # Individual fields
-        if line_clean.startswith('Bra'):
-            measurements['Bra'] = line_clean.replace('Bra', '').strip()
-        elif line_clean.startswith('Shirt'):
-            measurements['Shirt'] = line_clean.replace('Shirt', '').strip()
-        elif line_clean.startswith('Pants'):
-            measurements['Pants'] = line_clean.replace('Pants', '').strip()
-        elif line_clean.startswith('Shoe'):
-            measurements['Shoe'] = line_clean.replace('Shoe', '').strip()
-
-    return measurements
-
 def fetch_models():
-    """Scrape models from ilmodel.com with timeout"""
+    """Scrape models from ilmodel.com"""
+    global scraping_status
     try:
-        logger.info("🚀 Scraping started")
-        all_models = []
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        scraping_status['status'] = 'starting'
+        logger.info("=" * 50)
+        logger.info("🚀 SCRAPE START")
+        logger.info("=" * 50)
 
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        all_models = []
+
+        # Step 1: Fetch model list page
+        logger.info("📄 Step 1: Fetching model list page...")
         try:
-            logger.info("📄 Fetching model list...")
-            response = requests.get('https://www.ilmodel.com/models', headers=headers, timeout=15)
+            response = requests.get(
+                'https://www.ilmodel.com/models',
+                headers=headers,
+                timeout=20,
+                allow_redirects=True
+            )
+            logger.info(f"   Status: {response.status_code}")
+            logger.info(f"   Content length: {len(response.text)} bytes")
+
+            if response.status_code != 200:
+                logger.error(f"   ❌ Bad status code: {response.status_code}")
+                raise Exception(f"Status {response.status_code}")
+
             response.encoding = 'utf-8'
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            # Extract model links
+            # Step 2: Extract model links
+            logger.info("🔗 Step 2: Extracting model links...")
             model_links = []
             for link in soup.find_all('a', href=True):
                 href = link.get('href', '')
-                if 'model/' in href or '/models/' in href:
-                    name = link.get_text(strip=True)
-                    if name and len(name) > 1:
+                name = link.get_text(strip=True)
+
+                if name and len(name) > 1:
+                    if 'model' in href.lower():
                         if not href.startswith('http'):
                             href = 'https://www.ilmodel.com' + href if href.startswith('/') else 'https://www.ilmodel.com/models/' + href
                         model_links.append((name, href))
 
             model_links = list(dict.fromkeys(model_links))
-            logger.info(f"✅ Found {len(model_links)} models")
+            logger.info(f"   ✅ Found {len(model_links)} model links")
 
-            # Fetch details (timeout after 30 seconds of scraping)
-            start_time = time.time()
-            MAX_SCRAPE_TIME = 30  # 30 seconds max
+            if len(model_links) == 0:
+                logger.warning("   ⚠️ No model links found! Check if website structure changed")
 
-            for idx, (name, url) in enumerate(model_links[:30]):
-                if time.time() - start_time > MAX_SCRAPE_TIME:
-                    logger.info(f"⏱ Scrape timeout reached. Got {len(all_models)} models")
-                    break
+            # Step 3: Fetch each model
+            logger.info("👥 Step 3: Fetching model details...")
+            scraping_status['status'] = 'fetching'
 
+            for idx, (name, url) in enumerate(model_links[:20]):  # Reduced to 20 for speed
                 try:
-                    logger.info(f"[{idx+1}] {name}")
+                    scraping_status['count'] = idx + 1
+                    logger.info(f"   [{idx+1}/{min(20, len(model_links))}] {name}")
+
                     response = requests.get(url, headers=headers, timeout=10)
-                    response.encoding = 'utf-8'
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    page_text = soup.get_text()
+                    logger.info(f"       Status: {response.status_code}")
 
-                    measurements = extract_measurements(page_text)
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        page_text = soup.get_text()
 
-                    model = {
-                        'Name': name,
-                        'URL': url,
-                        'Height': measurements['Height'],
-                        'Bust': measurements['Bust'],
-                        'Waist': measurements['Waist'],
-                        'Hips': measurements['Hips'],
-                        'Bra': measurements['Bra'],
-                        'Shirt': measurements['Shirt'],
-                        'Pants': measurements['Pants'],
-                        'Shoe': measurements['Shoe'],
-                        'EyeColor': measurements['EyeColor'],
-                        'HairColor': measurements['HairColor'],
-                        'Tattoos': measurements['Tattoos'],
-                        'EarPiercings': measurements['EarPiercings'],
-                    }
+                        model = {
+                            'Name': name,
+                            'URL': url,
+                            'Height': '', 'Bust': '', 'Waist': '', 'Hips': '',
+                            'Bra': '', 'Shirt': '', 'Pants': '', 'Shoe': '',
+                            'EyeColor': '', 'HairColor': '', 'Tattoos': '', 'EarPiercings': ''
+                        }
 
-                    all_models.append(model)
-                    time.sleep(0.3)
+                        all_models.append(model)
+                        logger.info(f"       ✅ Added")
 
+                    time.sleep(0.2)
+
+                except requests.exceptions.Timeout:
+                    logger.warning(f"       ⏱ Timeout")
                 except Exception as e:
-                    logger.warning(f"⚠️ {name}: {str(e)[:40]}")
+                    logger.warning(f"       ❌ Error: {str(e)[:50]}")
 
         except requests.exceptions.Timeout:
-            logger.error("❌ Request timeout")
+            logger.error("   ❌ Timeout fetching model list")
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"   ❌ Connection error: {str(e)[:100]}")
         except Exception as e:
-            logger.error(f"❌ Error: {str(e)[:100]}")
+            logger.error(f"   ❌ Error: {str(e)[:100]}")
 
+        # Step 4: Update cache
+        logger.info("💾 Step 4: Updating cache...")
         with cache_lock:
-            globals()['models_cache'] = all_models if all_models else DUMMY_MODELS
+            models_cache.clear()
+            models_cache.extend(all_models if all_models else DUMMY_MODELS)
 
-        logger.info(f"✅ Complete: {len(all_models)} models")
+        scraping_status['status'] = 'complete'
+        logger.info("=" * 50)
+        logger.info(f"✅ SCRAPE COMPLETE: {len(all_models)} models")
+        logger.info("=" * 50)
 
     except Exception as e:
-        logger.error(f"❌ Fatal: {str(e)}")
+        logger.error("=" * 50)
+        logger.error(f"❌ FATAL ERROR: {str(e)}")
+        logger.error("=" * 50)
+        scraping_status['status'] = 'error'
         with cache_lock:
-            globals()['models_cache'] = DUMMY_MODELS
+            models_cache.clear()
+            models_cache.extend(DUMMY_MODELS)
 
 @app.route('/api/models')
 def api_models():
     with cache_lock:
-        return jsonify(models_cache if models_cache else DUMMY_MODELS)
+        data = models_cache if models_cache else DUMMY_MODELS
+    logger.info(f"API request: returning {len(data)} models (status: {scraping_status.get('status')})")
+    return jsonify(data)
 
 @app.route('/')
 def index():
@@ -158,10 +149,14 @@ def index():
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 8081))
 
-    logger.info('🎯 Starting server...')
+    logger.info("🎯 Flask server starting...")
     with cache_lock:
-        globals()['models_cache'] = DUMMY_MODELS
+        models_cache.clear()
+        models_cache.extend(DUMMY_MODELS)
 
-    threading.Thread(target=fetch_models, daemon=True).start()
+    logger.info("🚀 Starting scrape thread...")
+    scrape_thread = threading.Thread(target=fetch_models, daemon=True)
+    scrape_thread.start()
 
-    app.run(debug=False, port=PORT, host='0.0.0.0')
+    logger.info(f"🌐 Listening on port {PORT}")
+    app.run(debug=False, port=PORT, host='0.0.0.0', use_reloader=False)
