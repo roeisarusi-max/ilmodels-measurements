@@ -1,38 +1,245 @@
 #!/usr/bin/env python3
 """
 IL Models – Measurements Search Tool
-Reads from Google Sheets (public CSV export) and provides a searchable/filterable UI
+Scrapes data from ilmodel.com (all categories) and provides a searchable/filterable UI
 Supports exact match + close-match (within tolerance) highlighting
 """
-import os, csv, io, threading, webbrowser
-import requests
+import os, json, threading, webbrowser, logging
 from flask import Flask, jsonify
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+import time
 
 app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSbke0sBlhYRVERSEZf6QrtsBuLCXPLKayrr3jXhAHEkxZ52eV57U1P_rFEFYD0SrVwBFXLtgYGAypo/pub?gid=1662218182&single=true&output=csv"
+# Global cache for models data
+models_cache = []
+cache_lock = threading.Lock()
+
+# Categories to scrape
+CATEGORIES = [
+    ("WOMEN", "https://www.ilmodel.com/models"),
+    ("MEN", "https://www.ilmodel.com/men"),
+    ("CURVE", "https://www.ilmodel.com/plus-size"),
+    ("INFLUENCER", "https://www.ilmodel.com/influencer"),
+    ("DEVELOPMENT", "https://www.ilmodel.com/development"),
+    ("CLASSIC WOMEN", "https://www.ilmodel.com/classic-women"),
+]
 
 
-def fetch_data():
+def init_driver():
+    """Initialize Chrome WebDriver with headless mode"""
     try:
-        r = requests.get(CSV_URL, timeout=15)
-        r.encoding = "utf-8"
-        reader = csv.DictReader(io.StringIO(r.text))
-        rows = []
-        for row in reader:
-            clean = {k.strip(): (v.strip() if v else '') for k, v in row.items() if k is not None and k != ''}
-            rows.append(clean)
-        return rows, None
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+        driver = webdriver.Chrome(options=chrome_options)
+        return driver
     except Exception as e:
-        return [], str(e)
+        logger.error(f"Failed to initialize WebDriver: {e}")
+        return None
+
+
+def scrape_category(category_name, category_url):
+    """Scrape all models from a given category"""
+    logger.info(f"Scraping category: {category_name} from {category_url}")
+    models = []
+
+    driver = init_driver()
+    if not driver:
+        logger.error(f"Could not initialize driver for {category_name}")
+        return models
+
+    try:
+        driver.get(category_url)
+
+        # Wait for models to load (look for model links)
+        wait = WebDriverWait(driver, 10)
+        wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a[href^='#/']")))
+
+        # Get all model links from current page
+        model_links = driver.find_elements(By.CSS_SELECTOR, "a[href^='#/']")
+        model_urls = []
+
+        for link in model_links:
+            href = link.get_attribute("href")
+            if href and href.startswith("#/"):
+                model_urls.append(f"https://www.ilmodel.com/models{href}")
+
+        logger.info(f"Found {len(model_urls)} models in {category_name}")
+
+        # Scrape each model's details
+        for idx, model_url in enumerate(model_urls):
+            try:
+                logger.info(f"  [{idx+1}/{len(model_urls)}] Scraping {model_url}")
+                driver.get(model_url)
+                time.sleep(0.5)  # Small delay to let page load
+
+                # Extract model info
+                model_data = extract_model_data(driver, category_name)
+                if model_data:
+                    models.append(model_data)
+            except Exception as e:
+                logger.warning(f"Failed to scrape {model_url}: {e}")
+                continue
+
+    except Exception as e:
+        logger.error(f"Error scraping category {category_name}: {e}")
+    finally:
+        driver.quit()
+
+    return models
+
+
+def extract_model_data(driver, category):
+    """Extract model data from current page"""
+    try:
+        # Get page text to extract measurements
+        page_text = driver.find_element(By.TAG_NAME, "body").text
+
+        # Get model name from heading
+        try:
+            heading = driver.find_element(By.TAG_NAME, "h1")
+            name = heading.text.strip()
+        except:
+            name = "Unknown"
+
+        # Parse measurements from generic element containing "Height | Bust | Waist | Hips..."
+        measurements = {}
+        try:
+            # Look for the measurements container
+            generic_elems = driver.find_elements(By.TAG_NAME, "div")
+            measurements_text = None
+
+            for elem in generic_elems:
+                text = elem.text
+                if "Height" in text and "Bust" in text and "Waist" in text:
+                    measurements_text = text
+                    break
+
+            if not measurements_text:
+                # Fallback: try to find it in page text
+                for line in page_text.split('\n'):
+                    if "Height" in line and "Bust" in line:
+                        measurements_text = line
+                        break
+
+            if measurements_text:
+                # Parse: "Height 171 | Bust 84 | Waist 64 | Hips 88 | Bra B/c75 | Shirt S | Pants 34 | Shoe 37 | ..."
+                parts = [p.strip() for p in measurements_text.split('|')]
+                for part in parts:
+                    tokens = part.split()
+                    if len(tokens) >= 2:
+                        key = tokens[0]
+                        value = ' '.join(tokens[1:])
+                        measurements[key] = value
+        except Exception as e:
+            logger.warning(f"Failed to parse measurements for {name}: {e}")
+
+        # Extract social media links
+        instagram = ""
+        tiktok = ""
+        try:
+            links = driver.find_elements(By.TAG_NAME, "a")
+            for link in links:
+                href = link.get_attribute("href") or ""
+                text = link.text.strip().lower()
+                if "instagram" in href or "instagram" in text:
+                    instagram = href
+                if "tiktok" in href or "tiktok" in text:
+                    tiktok = href
+        except:
+            pass
+
+        # Organize data in consistent format
+        model = {
+            "שם": name,
+            "Name": name,
+            "Category": category,
+            "Height": measurements.get("Height", ""),
+            "גובה": measurements.get("Height", ""),
+            "Bust": measurements.get("Bust", ""),
+            "חזה": measurements.get("Bust", ""),
+            "Waist": measurements.get("Waist", ""),
+            "מותן": measurements.get("Waist", ""),
+            "Hips": measurements.get("Hips", ""),
+            "אגן": measurements.get("Hips", ""),
+            "Bra": measurements.get("Bra", ""),
+            "חזייה": measurements.get("Bra", ""),
+            "Shirt": measurements.get("Shirt", ""),
+            "חולצה": measurements.get("Shirt", ""),
+            "Pants": measurements.get("Pants", ""),
+            "מכנסיים": measurements.get("Pants", ""),
+            "Shoe": measurements.get("Shoe", ""),
+            "נעליים": measurements.get("Shoe", ""),
+            "Eye Color": measurements.get("Eye Color", ""),
+            "עיניים": measurements.get("Eye Color", ""),
+            "Hair Color": measurements.get("Hair Color", ""),
+            "שיער": measurements.get("Hair Color", ""),
+            "Tattoos": measurements.get("Tattoos", ""),
+            "קעקוע": measurements.get("Tattoos", ""),
+            "Ear Piercings": measurements.get("Ear Piercings", ""),
+            "עגילים": measurements.get("Ear Piercings", ""),
+            "Instagram": instagram,
+            "אינסטגרם": instagram,
+            "TikTok": tiktok,
+            "טיקטוק": tiktok,
+        }
+
+        return model
+
+    except Exception as e:
+        logger.error(f"Error extracting model data: {e}")
+        return None
+
+
+def scrape_all_data():
+    """Scrape all categories and update cache"""
+    global models_cache
+
+    logger.info("Starting full data scrape...")
+    all_models = []
+
+    for category_name, category_url in CATEGORIES:
+        try:
+            models = scrape_category(category_name, category_url)
+            all_models.extend(models)
+            logger.info(f"Successfully scraped {len(models)} models from {category_name}")
+        except Exception as e:
+            logger.error(f"Failed to scrape category {category_name}: {e}")
+            continue
+
+    with cache_lock:
+        models_cache = all_models
+
+    logger.info(f"Scraping complete. Total models: {len(models_cache)}")
+    return all_models
 
 
 @app.route("/api/models")
 def api_models():
-    rows, err = fetch_data()
-    if err:
-        return jsonify({"error": err}), 500
-    return jsonify(rows)
+    """Return cached models data"""
+    with cache_lock:
+        if not models_cache:
+            return jsonify({"error": "Data not loaded yet. Please try again in a moment."}), 503
+        return jsonify(models_cache)
+
+
+@app.route("/api/refresh")
+def api_refresh():
+    """Manually trigger data refresh"""
+    threading.Thread(target=scrape_all_data, daemon=True).start()
+    return jsonify({"status": "Refresh started in background"}), 202
 
 
 HTML = r"""<!DOCTYPE html>
@@ -245,7 +452,7 @@ header #count-header { font-size: 13px; opacity: 0.65; }
 
     <div class="tolerance-row">
       <label>⚡ טווח זליגה (±)<br><small style="font-weight:400;color:#a07000">ס"מ: 2–5 | גובה במטרים: 0.03</small></label>
-      <input type="number" id="f-tolerance" value="3" min="0" step="0.01">
+      <input type="number" id="f-tolerance" value="0" min="0" step="0.01">
     </div>
 
     <div class="filter-group">
@@ -313,7 +520,7 @@ header #count-header { font-size: 13px; opacity: 0.65; }
     </div>
     <div class="results-header" id="results-header">טוען נתונים...</div>
     <div class="grid" id="grid">
-      <div class="state-msg">⏳ טוען...</div>
+      <div class="state-msg">⏳ טוען נתונים מהאתר...</div>
     </div>
   </div>
 </div>
@@ -362,7 +569,7 @@ async function loadData() {
 function applyFilters() {
   const name      = document.getElementById('f-name').value.trim().toLowerCase();
   const toleranceRaw = document.getElementById('f-tolerance').value;
-  const tolerance = toleranceRaw === '' ? 3 : (isNaN(parseFloat(toleranceRaw)) ? 3 : parseFloat(toleranceRaw));
+  const tolerance = toleranceRaw === '' ? 0 : (isNaN(parseFloat(toleranceRaw)) ? 0 : parseFloat(toleranceRaw));
   const heightT   = parseFloat(document.getElementById('f-height').value)  || null;
   const bustT     = parseFloat(document.getElementById('f-bust').value)    || null;
   const waistT    = parseFloat(document.getElementById('f-waist').value)   || null;
@@ -460,7 +667,7 @@ function renderResults(results) {
     const shoes     = getVal(m, 'נעליים')               || '—';
     const eyes      = getVal(m, 'עיניים')               || '—';
     const hair      = getVal(m, 'שיער')                 || '—';
-    const piercings = getVal(m, 'חורים', 'עגילים')     || '—';
+    const piercings = getVal(m, 'עגילים')              || '—';
     const tattoos   = getVal(m, 'קעקוע');
     const instagram = getVal(m, 'אינסטגרם', 'Instagram');
     const tiktok    = getVal(m, 'טיקטוק', 'TikTok');
@@ -514,13 +721,18 @@ function renderResults(results) {
 function resetFilters() {
   document.querySelectorAll('input[type=text], input[type=number], select')
     .forEach(el => { if (el.id !== 'f-tolerance') el.value = ''; });
-  document.getElementById('f-tolerance').value = '3';
+  document.getElementById('f-tolerance').value = '0';
   applyFilters();
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Enter') applyFilters(); });
 
+// Load data on page load (will wait for server to scrape)
 loadData();
+// Retry every 5 seconds if data not loaded
+setInterval(() => {
+  if (allModels.length === 0) loadData();
+}, 5000);
 </script>
 </body>
 </html>"""
@@ -534,6 +746,12 @@ def index():
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 8081))
     IS_LOCAL = not os.environ.get("RAILWAY_ENVIRONMENT")
+
+    # Start scraping in background thread on startup
+    logger.info("Starting application...")
+    threading.Thread(target=scrape_all_data, daemon=True).start()
+
     if IS_LOCAL:
         threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
+
     app.run(debug=False, port=PORT, host="0.0.0.0")
