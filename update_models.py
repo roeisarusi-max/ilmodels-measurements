@@ -1,231 +1,202 @@
 #!/usr/bin/env python3
 """
-Scrapes real models from ilmodel.com
-Extracts: Name, Height, Bust, Waist, Hips, Bra, Shirt, Pants, Shoe,
-          Eye Color, Hair Color, Tattoos, Ear Piercings
-Saves to models_data.json - updates daily
+Scrapes ALL models from ilmodel.com (all categories) into models_data.json.
+Pure requests + BeautifulSoup - no browser needed.
 """
 
 import json
+import re
 import time
 from datetime import datetime
 
-try:
-    from playwright.sync_api import sync_playwright
-    HAS_PLAYWRIGHT = True
-except ImportError:
-    HAS_PLAYWRIGHT = False
-    print("❌ Playwright not installed. Install: pip install playwright")
-    print("   Then run: playwright install")
+import requests
+from bs4 import BeautifulSoup
 
-def extract_measurements(text):
-    """Extract measurements from model page text"""
-    data = {
-        'Height': '', 'Bust': '', 'Waist': '', 'Hips': '',
-        'Bra': '', 'Shirt': '', 'Pants': '', 'Shoe': '',
-        'EyeColor': '', 'HairColor': '', 'Tattoos': '', 'EarPiercings': ''
-    }
+BASE = "https://www.ilmodel.com"
+HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
 
-    # Look for patterns like "Height 171" or "Height | 171"
-    lines = text.split('\n')
-    for line in lines:
-        line_strip = line.strip()
+# Field key -> label aliases (longest first so "Eye Color" beats "Eye")
+FIELD_ALIASES = [
+    ("Height", ["height"]),
+    ("Bust", ["bust", "chest"]),
+    ("Waist", ["waist"]),
+    ("Hips", ["hips", "hip"]),
+    ("Bra", ["bra"]),
+    ("Shirt", ["shirt"]),
+    ("Pants", ["pants"]),
+    ("Shoe", ["shoes", "shoe"]),
+    ("EyeColor", ["eye color", "eyes", "eye"]),
+    ("HairColor", ["hair color", "hair"]),
+    ("Tattoos", ["tattoos", "tattoo"]),
+    ("EarPiercings", ["ear piercings", "ear piercing", "piercings", "piercing"]),
+]
 
-        # Parse measurement lines
-        if 'Height' in line_strip:
-            try:
-                val = line_strip.split('Height')[-1].split('|')[0].strip().split()[0]
-                data['Height'] = val
-            except:
-                pass
-        elif 'Bust' in line_strip:
-            try:
-                val = line_strip.split('Bust')[-1].split('|')[0].strip().split()[0]
-                data['Bust'] = val
-            except:
-                pass
-        elif 'Waist' in line_strip:
-            try:
-                val = line_strip.split('Waist')[-1].split('|')[0].strip().split()[0]
-                data['Waist'] = val
-            except:
-                pass
-        elif 'Hips' in line_strip:
-            try:
-                val = line_strip.split('Hips')[-1].split('|')[0].strip().split()[0]
-                data['Hips'] = val
-            except:
-                pass
-        elif 'Bra' in line_strip or 'bra' in line_strip:
-            try:
-                val = line_strip.split('Bra')[-1].split('|')[0].split('bra')[-1].strip().split()[0]
-                data['Bra'] = val
-            except:
-                pass
-        elif 'Shirt' in line_strip:
-            try:
-                val = line_strip.split('Shirt')[-1].split('|')[0].strip().split()[0]
-                data['Shirt'] = val
-            except:
-                pass
-        elif 'Pants' in line_strip:
-            try:
-                val = line_strip.split('Pants')[-1].split('|')[0].strip().split()[0]
-                data['Pants'] = val
-            except:
-                pass
-        elif 'Shoe' in line_strip:
-            try:
-                val = line_strip.split('Shoe')[-1].split('|')[0].strip().split()[0]
-                data['Shoe'] = val
-            except:
-                pass
-        elif 'Eye Color' in line_strip or 'eye color' in line_strip:
-            try:
-                val = line_strip.split('Eye Color')[-1].split('eye color')[-1].split('|')[0].strip().split()[0]
-                data['EyeColor'] = val
-            except:
-                pass
-        elif 'Hair Color' in line_strip or 'hair color' in line_strip:
-            try:
-                val = line_strip.split('Hair Color')[-1].split('hair color')[-1].split('|')[0].strip().split()[0]
-                data['HairColor'] = val
-            except:
-                pass
-        elif 'Tattoo' in line_strip:
-            data['Tattoos'] = 'yes' if any(x in line_strip.lower() for x in ['yes', 'true', '✓']) else 'no'
-        elif 'Piercing' in line_strip or 'piercing' in line_strip:
-            try:
-                val = line_strip.split('Piercing')[-1].split('piercing')[-1].split('|')[0].strip()
-                data['EarPiercings'] = val if val else ''
-            except:
-                pass
+FIELD_KEYS = [k for k, _ in FIELD_ALIASES]
 
-    return data
 
-def scrape_with_playwright():
-    """Scrape using Playwright (handles JavaScript)"""
+def get(url, tries=3):
+    for i in range(tries):
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=25)
+            if r.status_code == 200:
+                return r
+        except Exception:
+            pass
+        time.sleep(1 + i)
+    return None
 
-    print("=" * 80)
-    print(f"🚀 SCRAPING ILMODEL.COM WITH PLAYWRIGHT - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 80)
 
-    if not HAS_PLAYWRIGHT:
-        print("❌ Playwright not available. Cannot proceed.")
-        return []
+CATEGORIES = {
+    "WOMEN": f"{BASE}/models",
+    "MEN": f"{BASE}/men",
+    "CURVE": f"{BASE}/plus-size",
+    "DEVELOPMENT": f"{BASE}/development",
+    "CLASSIC WOMEN": f"{BASE}/classic-women",
+}
+
+
+def find_categories():
+    """Known category pages, plus any extra ones discovered in the site nav."""
+    cats = dict(CATEGORIES)
+    r = get(f"{BASE}/models")
+    if r:
+        soup = BeautifulSoup(r.content, "html.parser")
+        for a in soup.select("nav a[href], .header-nav a[href]"):
+            name = a.get_text(strip=True).upper()
+            href = a.get("href", "")
+            if not name or not href.startswith("/"):
+                continue
+            if name in {"BECOME A MODEL", "CONTACT", "MENU", ""}:
+                continue
+            cats.setdefault(name, BASE + href)
+    return cats
+
+
+def find_models_in_category(cat_url):
+    """Return list of (name, url) from a category page."""
+    r = get(cat_url)
+    out = []
+    if not r:
+        return out
+    soup = BeautifulSoup(r.content, "html.parser")
+    for a in soup.select("#projectThumbs a.project[href]"):
+        href = a.get("href", "")
+        title_el = a.select_one(".project-title")
+        name = title_el.get_text(strip=True) if title_el else ""
+        if href and name:
+            out.append((name, BASE + href if href.startswith("/") else href))
+    # fallback: data-url attributes
+    if not out:
+        for div in soup.select(".project[data-url]"):
+            u = div.get("data-url", "")
+            if u:
+                out.append((u.strip("/").upper().replace("-", " "), BASE + u))
+    return out
+
+
+def normalize_height(value):
+    """'1.74' or '1,74' -> '174'. '171' stays '171'."""
+    v = value.replace(",", ".").strip()
+    m = re.match(r"^(\d)\.(\d{2})$", v)
+    if m:
+        return m.group(1) + m.group(2)
+    m = re.match(r"^(\d{3})", v)
+    return m.group(1) if m else v
+
+
+def parse_measurements(text):
+    """Handles both site formats:
+      'Height 171 | Bust 84 | ... | Ear Piercings 1+2'
+      'Height: 1.74|BUST 83| WAIST 63| HIPS 90| Shoes: 37| Hair: BLOND| Eyes: BLUE'
+    """
+    data = {key: "" for key in FIELD_KEYS}
+
+    line = None
+    for raw in text.split("\n"):
+        s = raw.strip()
+        if "|" in s and re.search(r"\bheight\b", s, re.I) and len(s) < 400:
+            line = s
+            break
+    if not line:
+        return data, False
+
+    for chunk in line.split("|"):
+        chunk = chunk.strip().lstrip("-–—").strip()
+        if not chunk:
+            continue
+        low = chunk.lower()
+        for key, aliases in FIELD_ALIASES:
+            matched = next((a for a in aliases if low.startswith(a)), None)
+            if not matched:
+                continue
+            value = chunk[len(matched):].strip()
+            value = value.lstrip(":").strip()
+            if key == "Height":
+                value = normalize_height(value)
+            data[key] = value
+            break
+
+    return data, bool(data["Height"])
+
+
+def scrape_model(name, url, category):
+    r = get(url)
+    if not r:
+        return None
+    soup = BeautifulSoup(r.content, "html.parser")
+    text = soup.get_text("\n")
+
+    # Real title from the page heading
+    title = name
+    for line in [l.strip() for l in text.split("\n") if l.strip()]:
+        if line.upper() == name.upper():
+            title = line
+            break
+
+    data, ok = parse_measurements(text)
+    model = {"Name": title, "URL": url, "Category": category}
+    model.update(data)
+    return model if ok else model
+
+
+def main():
+    print("=" * 70)
+    print(f"SCRAPING ilmodel.com - {datetime.now():%Y-%m-%d %H:%M:%S}")
+    print("=" * 70)
+
+    cats = find_categories()
+    print(f"\nCategories ({len(cats)}): {', '.join(cats)}")
+
+    seen = {}
+    for cat, cat_url in cats.items():
+        models = find_models_in_category(cat_url)
+        print(f"  {cat:16s} -> {len(models)} models")
+        for name, url in models:
+            if url not in seen:
+                seen[url] = (name, cat)
+        time.sleep(0.3)
+
+    print(f"\nTotal unique models: {len(seen)}\n")
 
     all_models = []
+    for i, (url, (name, cat)) in enumerate(seen.items(), 1):
+        m = scrape_model(name, url, cat)
+        if m:
+            has = "OK " if m.get("Height") else "-- "
+            print(f"[{i}/{len(seen)}] {has}{m['Name']}")
+            all_models.append(m)
+        else:
+            print(f"[{i}/{len(seen)}] FAIL {name}")
+        time.sleep(0.25)
 
-    try:
-        with sync_playwright() as p:
-            print("\n🌐 Starting browser...")
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
-            page = context.new_page()
+    with_data = sum(1 for m in all_models if m.get("Height"))
+    with open("models_data.json", "w", encoding="utf-8") as f:
+        json.dump(all_models, f, ensure_ascii=False, indent=2)
 
-            # Go to main models page
-            print("📄 Loading https://www.ilmodel.com/models")
-            page.goto('https://www.ilmodel.com/models', wait_until='domcontentloaded')
-            page.wait_for_load_state('networkidle')
-            time.sleep(2)
+    print("\n" + "=" * 70)
+    print(f"SAVED {len(all_models)} models ({with_data} with measurements)")
+    print("=" * 70)
 
-            # Find all model links
-            print("\n🔗 Finding model links...")
-            model_links = {}
 
-            # Get all links
-            links = page.query_selector_all('a')
-            print(f"   Found {len(links)} total links")
-
-            for link in links:
-                try:
-                    href = link.get_attribute('href')
-                    text = link.inner_text()
-
-                    if href and text and len(text) > 1:
-                        if 'model' in href.lower() and '/models/' in href:
-                            full_url = 'https://www.ilmodel.com' + href if href.startswith('/') else href
-                            if text not in model_links and len(text) < 50:
-                                model_links[text] = full_url
-
-                except:
-                    pass
-
-            print(f"   ✅ Found {len(model_links)} model links")
-
-            # Fetch each model
-            print("\n👥 Fetching model details...")
-            for idx, (name, url) in enumerate(list(model_links.items())[:50]):  # Limit to 50
-                try:
-                    print(f"   [{idx+1}] {name}...", end=" ", flush=True)
-
-                    page.goto(url, wait_until='domcontentloaded')
-                    page.wait_for_load_state('networkidle')
-                    time.sleep(1)
-
-                    # Get page content
-                    content = page.content()
-                    page_text = page.inner_text()
-
-                    # Extract title (model name) from heading
-                    title_elem = page.query_selector('h1, h2, [class*="title"], [class*="name"]')
-                    if title_elem:
-                        title = title_elem.inner_text().strip()
-                    else:
-                        title = name
-
-                    # Extract measurements
-                    measurements = extract_measurements(page_text)
-
-                    model = {
-                        'Name': title,
-                        'URL': url,
-                        'Height': measurements['Height'],
-                        'Bust': measurements['Bust'],
-                        'Waist': measurements['Waist'],
-                        'Hips': measurements['Hips'],
-                        'Bra': measurements['Bra'],
-                        'Shirt': measurements['Shirt'],
-                        'Pants': measurements['Pants'],
-                        'Shoe': measurements['Shoe'],
-                        'EyeColor': measurements['EyeColor'],
-                        'HairColor': measurements['HairColor'],
-                        'Tattoos': measurements['Tattoos'],
-                        'EarPiercings': measurements['EarPiercings']
-                    }
-
-                    all_models.append(model)
-                    print("✅")
-
-                except Exception as e:
-                    print(f"❌ {str(e)[:30]}")
-
-            browser.close()
-
-            # Save to file
-            print(f"\n💾 Saving {len(all_models)} models to models_data.json...")
-            with open('models_data.json', 'w', encoding='utf-8') as f:
-                json.dump(all_models, f, ensure_ascii=False, indent=2)
-
-            print("\n" + "=" * 80)
-            print(f"✅ SUCCESS: {len(all_models)} MODELS SAVED")
-            print(f"📝 Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print("=" * 80)
-
-            return all_models
-
-    except Exception as e:
-        print(f"\n❌ ERROR: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return []
-
-if __name__ == '__main__':
-    if not HAS_PLAYWRIGHT:
-        print("\n📦 Installing Playwright...")
-        import subprocess
-        subprocess.run(['pip', 'install', 'playwright'], check=False)
-        subprocess.run(['playwright', 'install'], check=False)
-        print("\n✅ Playwright installed. Run script again.")
-    else:
-        scrape_with_playwright()
+if __name__ == "__main__":
+    main()

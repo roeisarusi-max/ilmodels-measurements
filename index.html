@@ -28,6 +28,7 @@ header h1 { font-size: 20px; font-weight: 700; }
 .card-checkbox { position: absolute; top: 10px; right: 10px; width: 18px; height: 18px; cursor: pointer; }
 .card-name { font-size: 14px; font-weight: 700; color: #1a1a2e; margin-bottom: 8px; margin-top: 18px; cursor: pointer; }
 .card-name a { color: #1a73e8; text-decoration: underline; }
+.card-cat { font-size: 9px; color: #aaa; letter-spacing: .5px; margin-bottom: 8px; }
 .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 10px; }
 .card-field { display: flex; flex-direction: column; }
 .card-field .lbl { color: #999; margin-bottom: 2px; font-size: 9px; text-transform: uppercase; }
@@ -51,12 +52,19 @@ header h1 { font-size: 20px; font-weight: 700; }
       <label>שם</label>
       <input type="text" id="f-name" placeholder="חפש לפי שם...">
     </div>
+    <div class="filter-group">
+      <label>קטגוריה</label>
+      <select id="f-category"><option value="">כל הקטגוריות</option></select>
+    </div>
 
     <h2>👤 גוף ומידות</h2>
     <div class="filter-group">
+      <label>טווח סטייה (± ס"מ)</label>
+      <input type="number" id="f-tolerance" value="0" min="0" max="20" step="1">
+    </div>
+    <div class="filter-group">
       <label>גובה (ס"מ)</label>
       <input type="number" id="f-height" placeholder="ל.ח: 174" step="0.1">
-      <div class="tolerance-group">דיוק: <span id="tolerance-height">0</span></div>
     </div>
     <div class="filter-group">
       <label>חזה (ס"מ)</label>
@@ -108,11 +116,7 @@ header h1 { font-size: 20px; font-weight: 700; }
     </div>
     <div class="filter-group">
       <label>פירסינג באוזניים</label>
-      <select id="f-ear-piercings">
-        <option value="">כל</option>
-        <option value="yes">יש</option>
-        <option value="no">אין</option>
-      </select>
+      <input type="text" id="f-ear-piercings" placeholder="ל.ח: 1+2">
     </div>
 
     <button class="btn-search" onclick="applyFilters()">🔍 חפש</button>
@@ -146,11 +150,20 @@ async function loadData() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     allModels = data;
-    document.getElementById('results-header').textContent = allModels.length + ' דוגמניות בסך הכל';
+    buildCategoryOptions();
     applyFilters();
   } catch(e) {
     document.getElementById('grid').innerHTML = '<div class="state-msg">❌ שגיאה: ' + e.message + '</div>';
   }
+}
+
+function buildCategoryOptions() {
+  const sel = document.getElementById('f-category');
+  const current = sel.value;
+  const cats = [...new Set(allModels.map(m => m.Category).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">כל הקטגוריות</option>' +
+    cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  sel.value = current;
 }
 
 function matches(value, filter) {
@@ -159,8 +172,17 @@ function matches(value, filter) {
   return value.toLowerCase().includes(filter.toLowerCase());
 }
 
+function numMatch(modelValue, target, tol) {
+  if (!target) return true;
+  const v = parseFloat(modelValue);
+  if (isNaN(v)) return false;
+  return Math.abs(v - target) <= tol;
+}
+
 function applyFilters() {
   const name = document.getElementById('f-name').value.toLowerCase();
+  const category = document.getElementById('f-category').value;
+  const tol = parseFloat(document.getElementById('f-tolerance').value) || 0;
   const height = parseFloat(document.getElementById('f-height').value) || null;
   const bust = parseFloat(document.getElementById('f-bust').value) || null;
   const waist = parseFloat(document.getElementById('f-waist').value) || null;
@@ -176,20 +198,21 @@ function applyFilters() {
 
   const results = allModels.filter(m => {
     if (name && !(m.Name || '').toLowerCase().includes(name)) return false;
-    if (height && Math.abs(parseFloat(m.Height || 0) - height) > 0) return false;
-    if (bust && Math.abs(parseFloat(m.Bust || 0) - bust) > 0) return false;
-    if (waist && Math.abs(parseFloat(m.Waist || 0) - waist) > 0) return false;
-    if (hips && Math.abs(parseFloat(m.Hips || 0) - hips) > 0) return false;
+    if (category && m.Category !== category) return false;
+    if (!numMatch(m.Height, height, tol)) return false;
+    if (!numMatch(m.Bust, bust, tol)) return false;
+    if (!numMatch(m.Waist, waist, tol)) return false;
+    if (!numMatch(m.Hips, hips, tol)) return false;
     if (bra && !matches(m.Bra, bra)) return false;
     if (shirt && !matches(m.Shirt, shirt)) return false;
     if (pants && !matches(m.Pants, pants)) return false;
     if (shoe && !matches(m.Shoe, shoe)) return false;
     if (eyeColor && !matches(m.EyeColor, eyeColor)) return false;
     if (hairColor && !matches(m.HairColor, hairColor)) return false;
-    if (tattoos === 'yes' && m.Tattoos !== 'כן') return false;
-    if (tattoos === 'no' && m.Tattoos === 'כן') return false;
-    if (earPiercings === 'yes' && m.EarPiercings !== 'כן') return false;
-    if (earPiercings === 'no' && m.EarPiercings === 'כן') return false;
+    const hasTat = (m.Tattoos || '').toLowerCase().startsWith('y');
+    if (tattoos === 'yes' && !hasTat) return false;
+    if (tattoos === 'no' && hasTat) return false;
+    if (earPiercings && !matches(m.EarPiercings, earPiercings)) return false;
     return true;
   });
 
@@ -205,6 +228,7 @@ function applyFilters() {
     <div class="card">
       <input type="checkbox" class="card-checkbox" data-idx="${idx}" onchange="updateSelection()">
       <div class="card-name"><a href="${m.URL}" target="_blank">${m.Name || 'ללא שם'}</a></div>
+      <div class="card-cat">${m.Category || ''}</div>
       <div class="card-grid">
         <div class="card-field"><div class="lbl">גובה</div><div class="val">${m.Height || '—'}</div></div>
         <div class="card-field"><div class="lbl">חזה</div><div class="val">${m.Bust || '—'}</div></div>
@@ -212,8 +236,12 @@ function applyFilters() {
         <div class="card-field"><div class="lbl">אגן</div><div class="val">${m.Hips || '—'}</div></div>
         <div class="card-field"><div class="lbl">חזייה</div><div class="val">${m.Bra || '—'}</div></div>
         <div class="card-field"><div class="lbl">חולצה</div><div class="val">${m.Shirt || '—'}</div></div>
+        <div class="card-field"><div class="lbl">מכנסיים</div><div class="val">${m.Pants || '—'}</div></div>
+        <div class="card-field"><div class="lbl">נעליים</div><div class="val">${m.Shoe || '—'}</div></div>
         <div class="card-field"><div class="lbl">עיניים</div><div class="val">${m.EyeColor || '—'}</div></div>
         <div class="card-field"><div class="lbl">שיער</div><div class="val">${m.HairColor || '—'}</div></div>
+        <div class="card-field"><div class="lbl">קעקועים</div><div class="val">${m.Tattoos || '—'}</div></div>
+        <div class="card-field"><div class="lbl">פירסינג</div><div class="val">${m.EarPiercings || '—'}</div></div>
       </div>
     </div>
   `).join('');
@@ -252,12 +280,16 @@ function copyToClipboard() {
 }
 
 function resetFilters() {
-  document.querySelectorAll('input, select').forEach(el => el.value = '');
+  document.querySelectorAll('.sidebar input, .sidebar select').forEach(el => el.value = '');
+  document.getElementById('f-tolerance').value = '0';
   selectedModels.clear();
-  document.querySelectorAll('.card-checkbox').forEach(cb => cb.checked = false);
   updateSelection();
-  loadData();
+  applyFilters();
 }
+
+// live filtering as you type
+document.querySelectorAll('.sidebar input, .sidebar select')
+  .forEach(el => el.addEventListener('input', applyFilters));
 
 loadData();
 setInterval(() => { if (allModels.length === 0) loadData(); }, 5000);
