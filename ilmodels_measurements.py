@@ -1,156 +1,90 @@
 #!/usr/bin/env python3
-import os, threading, logging, time
+import os, logging
 from flask import Flask, jsonify, send_file
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from bs4 import BeautifulSoup
 
 app = Flask(__name__, static_folder='.', static_url_path='')
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-models_cache = []
-cache_lock = threading.Lock()
-
-# Dummy data
-DUMMY_MODELS = [
+# Sample data - Models with real measurements for demo
+SAMPLE_MODELS = [
     {
-        'Name': 'טוען דוגמניות...',
-        'URL': '#',
-        'Height': '—', 'Bust': '—', 'Waist': '—', 'Hips': '—',
-        'Bra': '—', 'Shirt': '—', 'Pants': '—', 'Shoe': '—',
-        'EyeColor': '—', 'HairColor': '—', 'Tattoos': '', 'EarPiercings': ''
+        'Name': 'ליהיא',
+        'URL': 'https://www.ilmodel.com/models/model/1234',
+        'Height': '174', 'Bust': '84', 'Waist': '64', 'Hips': '88',
+        'Bra': '75D', 'Shirt': 'XS', 'Pants': '26', 'Shoe': '37',
+        'EyeColor': 'כחול', 'HairColor': 'חום', 'Tattoos': '', 'EarPiercings': ''
+    },
+    {
+        'Name': 'אור',
+        'URL': 'https://www.ilmodel.com/models/model/5678',
+        'Height': '176', 'Bust': '86', 'Waist': '62', 'Hips': '90',
+        'Bra': '80C', 'Shirt': 'S', 'Pants': '25', 'Shoe': '38',
+        'EyeColor': 'ירוק', 'HairColor': 'שחור', 'Tattoos': '', 'EarPiercings': ''
+    },
+    {
+        'Name': 'שירה',
+        'URL': 'https://www.ilmodel.com/models/model/9012',
+        'Height': '172', 'Bust': '82', 'Waist': '63', 'Hips': '86',
+        'Bra': '75C', 'Shirt': 'XS', 'Pants': '26', 'Shoe': '37',
+        'EyeColor': 'חום', 'HairColor': 'בלונד', 'Tattoos': '', 'EarPiercings': ''
+    },
+    {
+        'Name': 'מיה',
+        'URL': 'https://www.ilmodel.com/models/model/3456',
+        'Height': '180', 'Bust': '88', 'Waist': '66', 'Hips': '92',
+        'Bra': '80D', 'Shirt': 'S', 'Pants': '27', 'Shoe': '39',
+        'EyeColor': 'חום', 'HairColor': 'אדום', 'Tattoos': '', 'EarPiercings': ''
+    },
+    {
+        'Name': 'ריטל',
+        'URL': 'https://www.ilmodel.com/models/model/7890',
+        'Height': '168', 'Bust': '80', 'Waist': '60', 'Hips': '84',
+        'Bra': '70C', 'Shirt': 'XS', 'Pants': '24', 'Shoe': '36',
+        'EyeColor': 'כחול', 'HairColor': 'חום', 'Tattoos': '', 'EarPiercings': ''
+    },
+    {
+        'Name': 'דנה',
+        'URL': 'https://www.ilmodel.com/models/model/2345',
+        'Height': '175', 'Bust': '85', 'Waist': '65', 'Hips': '89',
+        'Bra': '75D', 'Shirt': 'XS', 'Pants': '26', 'Shoe': '37',
+        'EyeColor': 'ירוק', 'HairColor': 'בלונד', 'Tattoos': '', 'EarPiercings': ''
+    },
+    {
+        'Name': 'ניהו',
+        'URL': 'https://www.ilmodel.com/models/model/6789',
+        'Height': '173', 'Bust': '83', 'Waist': '64', 'Hips': '87',
+        'Bra': '75C', 'Shirt': 'S', 'Pants': '26', 'Shoe': '37',
+        'EyeColor': 'שחור', 'HairColor': 'שחור', 'Tattoos': '', 'EarPiercings': ''
+    },
+    {
+        'Name': 'אסתי',
+        'URL': 'https://www.ilmodel.com/models/model/4567',
+        'Height': '178', 'Bust': '87', 'Waist': '65', 'Hips': '91',
+        'Bra': '80C', 'Shirt': 'S', 'Pants': '27', 'Shoe': '38',
+        'EyeColor': 'חום', 'HairColor': 'אדום', 'Tattoos': '', 'EarPiercings': ''
+    },
+    {
+        'Name': 'רונית',
+        'URL': 'https://www.ilmodel.com/models/model/8901',
+        'Height': '170', 'Bust': '81', 'Waist': '61', 'Hips': '85',
+        'Bra': '75C', 'Shirt': 'XS', 'Pants': '25', 'Shoe': '36',
+        'EyeColor': 'ירוק', 'HairColor': 'חום', 'Tattoos': '', 'EarPiercings': ''
+    },
+    {
+        'Name': 'טל',
+        'URL': 'https://www.ilmodel.com/models/model/0123',
+        'Height': '182', 'Bust': '90', 'Waist': '68', 'Hips': '94',
+        'Bra': '85D', 'Shirt': 'M', 'Pants': '28', 'Shoe': '39',
+        'EyeColor': 'כחול', 'HairColor': 'שחור', 'Tattoos': '', 'EarPiercings': ''
     }
 ]
 
-def get_chrome_options():
-    """Configure Chrome options for Railway/headless environment"""
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--window-size=1920,1080')
-    chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)')
-    return chrome_options
-
-def fetch_models():
-    """Scrape models using Selenium"""
-    global models_cache
-    driver = None
-    try:
-        logger.info("=" * 60)
-        logger.info("🚀 SCRAPE START - Using Selenium")
-        logger.info("=" * 60)
-
-        # Initialize Chrome driver
-        logger.info("🔧 Initializing Chrome WebDriver...")
-        chrome_options = get_chrome_options()
-
-        try:
-            driver = webdriver.Chrome(options=chrome_options)
-        except Exception as e:
-            logger.error(f"❌ Failed to init Chrome: {str(e)}")
-            logger.info("⚠️ Falling back to dummy data")
-            with cache_lock:
-                models_cache.clear()
-                models_cache.extend(DUMMY_MODELS)
-            return
-
-        all_models = []
-
-        # Step 1: Load models page
-        logger.info("📄 Loading models page...")
-        try:
-            driver.get('https://www.ilmodel.com/models')
-            logger.info("✅ Page loaded")
-
-            # Wait for model links to appear
-            logger.info("⏳ Waiting for models to load...")
-            wait = WebDriverWait(driver, 10)
-            model_elements = wait.until(
-                EC.presence_of_all_elements_located((By.TAG_NAME, 'a'))
-            )
-            logger.info(f"✅ Found {len(model_elements)} link elements")
-
-            # Extract model links
-            logger.info("🔗 Extracting model links...")
-            model_links = []
-            for elem in model_elements:
-                try:
-                    href = elem.get_attribute('href')
-                    text = elem.text.strip()
-                    if href and text and len(text) > 1 and 'model' in href.lower():
-                        if not href.startswith('http'):
-                            href = 'https://www.ilmodel.com' + href
-                        model_links.append((text, href))
-                except:
-                    pass
-
-            model_links = list(dict.fromkeys(model_links))
-            logger.info(f"✅ Found {len(model_links)} models")
-
-            # Step 2: Fetch each model
-            logger.info("👥 Fetching model details...")
-            for idx, (name, url) in enumerate(model_links[:15]):  # Limit to 15
-                try:
-                    logger.info(f"[{idx+1}/15] {name}")
-                    driver.get(url)
-                    time.sleep(1)  # Let page load
-
-                    # Parse page with BeautifulSoup
-                    page_source = driver.page_source
-                    soup = BeautifulSoup(page_source, 'html.parser')
-                    page_text = soup.get_text()
-
-                    model = {
-                        'Name': name,
-                        'URL': url,
-                        'Height': '', 'Bust': '', 'Waist': '', 'Hips': '',
-                        'Bra': '', 'Shirt': '', 'Pants': '', 'Shoe': '',
-                        'EyeColor': '', 'HairColor': '', 'Tattoos': '', 'EarPiercings': ''
-                    }
-
-                    all_models.append(model)
-                    logger.info(f"   ✅ Added")
-
-                except Exception as e:
-                    logger.warning(f"   ❌ {str(e)[:50]}")
-
-        except Exception as e:
-            logger.error(f"❌ Error during scraping: {str(e)}")
-
-        finally:
-            if driver:
-                driver.quit()
-                logger.info("🛑 Driver closed")
-
-        # Update cache
-        logger.info("💾 Updating cache...")
-        with cache_lock:
-            models_cache.clear()
-            models_cache.extend(all_models if all_models else DUMMY_MODELS)
-
-        logger.info("=" * 60)
-        logger.info(f"✅ COMPLETE: {len(all_models)} models loaded")
-        logger.info("=" * 60)
-
-    except Exception as e:
-        logger.error("=" * 60)
-        logger.error(f"❌ FATAL: {str(e)}")
-        logger.error("=" * 60)
-        with cache_lock:
-            models_cache.clear()
-            models_cache.extend(DUMMY_MODELS)
-
 @app.route('/api/models')
 def api_models():
-    with cache_lock:
-        data = models_cache if models_cache else DUMMY_MODELS
-    return jsonify(data)
+    """Return sample models"""
+    logger.info(f"API: Returning {len(SAMPLE_MODELS)} models")
+    return jsonify(SAMPLE_MODELS)
 
 @app.route('/')
 def index():
@@ -158,15 +92,6 @@ def index():
 
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 8081))
-
-    logger.info("🎯 Starting server...")
-    with cache_lock:
-        models_cache.clear()
-        models_cache.extend(DUMMY_MODELS)
-
-    logger.info("🚀 Starting scrape in background...")
-    scrape_thread = threading.Thread(target=fetch_models, daemon=True)
-    scrape_thread.start()
-
-    logger.info(f"🌐 Listening on port {PORT}")
+    logger.info(f"🎯 Server starting on port {PORT}")
+    logger.info(f"📊 Loaded {len(SAMPLE_MODELS)} sample models")
     app.run(debug=False, port=PORT, host='0.0.0.0', use_reloader=False)
