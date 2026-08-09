@@ -1,1 +1,1 @@
-web: python ilmodels_measurements.py
+web: node server.js
