@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 MODELS_FILE = "models_data.json"
 REFRESH_SECONDS = 24 * 60 * 60  # once a day
 
-_cache = {"models": [], "updated": None}
+_cache = {"models": [], "updated": None, "added": [], "removed": [], "last_error": None}
 _lock = threading.Lock()
 
 
@@ -35,20 +35,51 @@ def load_file():
         return []
 
 
+def _refresh_once():
+    """Rebuild the whole roster from the live site.
+
+    Because the list is rebuilt from scratch, a model removed from
+    ilmodel.com disappears here and a newly added one shows up
+    automatically. Previous data is kept if the scrape fails.
+    """
+    try:
+        logger.info("Refreshing models from ilmodel.com...")
+
+        with _lock:
+            before = {m["URL"]: m.get("Name", "") for m in _cache["models"]}
+
+        models = update_models.main()
+        if not models or len(models) < update_models.MIN_EXPECTED:
+            raise RuntimeError(f"scrape returned {len(models) if models else 0} models")
+
+        after = {m["URL"]: m.get("Name", "") for m in models}
+        added = sorted(after[u] for u in after.keys() - before.keys())
+        removed = sorted(before[u] for u in before.keys() - after.keys())
+
+        with _lock:
+            _cache["models"] = models
+            _cache["updated"] = datetime.now().isoformat(timespec="seconds")
+            _cache["added"] = added
+            _cache["removed"] = removed
+            _cache["last_error"] = None
+
+        logger.info(f"Refreshed: {len(models)} models "
+                    f"(+{len(added)} added, -{len(removed)} removed)")
+        if added:
+            logger.info(f"  added:   {', '.join(added)}")
+        if removed:
+            logger.info(f"  removed: {', '.join(removed)}")
+
+    except Exception as e:
+        logger.error(f"Refresh failed, keeping previous data: {e}")
+        with _lock:
+            _cache["last_error"] = str(e)
+
+
 def refresh_loop():
-    """Re-scrape ilmodel.com once a day, keeping the last good data on failure."""
+    """Run a refresh at startup, then once every 24 hours."""
     while True:
-        try:
-            logger.info("Refreshing models from ilmodel.com...")
-            update_models.main()
-            models = load_file()
-            if models:
-                with _lock:
-                    _cache["models"] = models
-                    _cache["updated"] = datetime.now().isoformat(timespec="seconds")
-                logger.info(f"Refreshed: {len(models)} models")
-        except Exception as e:
-            logger.error(f"Refresh failed, keeping previous data: {e}")
+        _refresh_once()
         time.sleep(REFRESH_SECONDS)
 
 
@@ -64,7 +95,21 @@ def api_models():
 @app.route("/api/status")
 def api_status():
     with _lock:
-        return jsonify({"count": len(_cache["models"]), "updated": _cache["updated"]})
+        return jsonify({
+            "count": len(_cache["models"]),
+            "updated": _cache["updated"],
+            "added": _cache["added"],
+            "removed": _cache["removed"],
+            "last_error": _cache["last_error"],
+            "refresh_hours": REFRESH_SECONDS / 3600,
+        })
+
+
+@app.route("/api/refresh", methods=["POST", "GET"])
+def api_refresh():
+    """Trigger an immediate refresh without waiting for the daily cycle."""
+    threading.Thread(target=_refresh_once, daemon=True).start()
+    return jsonify({"status": "refresh started"})
 
 
 @app.route("/")

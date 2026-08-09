@@ -13,6 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE = "https://www.ilmodel.com"
+MIN_EXPECTED = 20  # sanity floor: below this the scrape is assumed broken
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
 
 # Field key -> label aliases (longest first so "Eye Color" beats "Eye")
@@ -190,12 +191,20 @@ def main():
         time.sleep(0.25)
 
     with_data = sum(1 for m in all_models if m.get("Height"))
+
+    # Safety: never overwrite good data with a broken/partial scrape
+    if len(all_models) < MIN_EXPECTED:
+        print(f"\nABORT: only {len(all_models)} models found (min {MIN_EXPECTED}). "
+              f"Keeping existing models_data.json.")
+        return all_models
+
     with open("models_data.json", "w", encoding="utf-8") as f:
         json.dump(all_models, f, ensure_ascii=False, indent=2)
 
     print("\n" + "=" * 70)
     print(f"SAVED {len(all_models)} models ({with_data} with measurements)")
     print("=" * 70)
+    return all_models
 
 
 if __name__ == "__main__":
