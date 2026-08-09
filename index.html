@@ -51,7 +51,7 @@ header h1 { font-size: 20px; font-weight: 700; }
       <label>שם</label>
       <input type="text" id="f-name" placeholder="חפש לפי שם...">
     </div>
-    
+
     <h2>👤 גוף ומידות</h2>
     <div class="filter-group">
       <label>גובה (ס"מ)</label>
@@ -86,7 +86,7 @@ header h1 { font-size: 20px; font-weight: 700; }
       <label>נעליים</label>
       <input type="text" id="f-shoe" placeholder="ל.ח: 37">
     </div>
-    
+
     <h2>🎨 פיזיותומי</h2>
     <div class="filter-group">
       <label>צבע עיניים</label>
@@ -96,7 +96,7 @@ header h1 { font-size: 20px; font-weight: 700; }
       <label>צבע שיער</label>
       <input type="text" id="f-hair-color" placeholder="ל.ח: חום">
     </div>
-    
+
     <h2>✨ מיוחד</h2>
     <div class="filter-group">
       <label>קעקועים</label>
@@ -114,7 +114,7 @@ header h1 { font-size: 20px; font-weight: 700; }
         <option value="no">אין</option>
       </select>
     </div>
-    
+
     <button class="btn-search" onclick="applyFilters()">🔍 חפש</button>
     <button class="btn-reset" onclick="resetFilters()">🔄 איפוס</button>
     <button class="btn-export" id="exportBtn" onclick="showLinks()" disabled>📋 קבל קישורים</button>
@@ -173,7 +173,7 @@ function applyFilters() {
   const hairColor = document.getElementById('f-hair-color').value;
   const tattoos = document.getElementById('f-tattoos').value;
   const earPiercings = document.getElementById('f-ear-piercings').value;
-  
+
   const results = allModels.filter(m => {
     if (name && !(m.Name || '').toLowerCase().includes(name)) return false;
     if (height && Math.abs(parseFloat(m.Height || 0) - height) > 0) return false;
@@ -192,15 +192,15 @@ function applyFilters() {
     if (earPiercings === 'no' && m.EarPiercings === 'כן') return false;
     return true;
   });
-  
+
   currentResults = results;
   document.getElementById('results-header').textContent = results.length + ' דוגמנית' + (results.length !== 1 ? 'ות' : 'ה');
-  
+
   if (results.length === 0) {
     document.getElementById('grid').innerHTML = '<div class="state-msg">❌ לא נמצאו תוצאות</div>';
     return;
   }
-  
+
   document.getElementById('grid').innerHTML = results.map((m, idx) => `
     <div class="card">
       <input type="checkbox" class="card-checkbox" data-idx="${idx}" onchange="updateSelection()">
