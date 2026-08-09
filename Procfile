@@ -1,1 +1,1 @@
-web: gunicorn ilmodels_measurements:app
+web: python ilmodels_measurements.py
