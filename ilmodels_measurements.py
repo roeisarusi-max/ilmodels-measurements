@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-IL Models – Measurements Search Tool
-Fetches data from ilmodel.com using requests + simple parsing
+IL Models – Measurements Search Tool with Link Export
 """
 import os, threading, webbrowser, logging, requests
 from flask import Flask, jsonify
@@ -75,7 +74,7 @@ def fetch_model_details(model_url, model_name, category):
             if 'tiktok' in href or 'tiktok' in text:
                 tiktok = link.get('href', '')
         model = {
-            "שם": model_name, "Name": model_name, "Category": category,
+            "שם": model_name, "Name": model_name, "URL": model_url, "Category": category,
             "Height": measurements.get("Height", ""), "גובה": measurements.get("Height", ""),
             "Bust": measurements.get("Bust", ""), "חזה": measurements.get("Bust", ""),
             "Waist": measurements.get("Waist", ""), "מותן": measurements.get("Waist", ""),
@@ -147,14 +146,27 @@ header h1 { font-size: 20px; font-weight: 700; }
 .btn-search { width: 100%; padding: 10px; background: #1a1a2e; color: white; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; margin-top: 4px; }
 .btn-search:hover { background: #2d2d5e; }
 .btn-reset { width: 100%; padding: 8px; background: #f0f0f0; color: #666; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; margin-top: 6px; }
+.btn-export { width: 100%; padding: 8px; background: #2e7d32; color: white; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; margin-top: 6px; }
+.btn-export:hover { background: #1b5e20; }
+.btn-export:disabled { background: #ccc; cursor: not-allowed; }
 .results { flex: 1; padding: 20px; overflow-y: auto; }
+.results-header { font-size: 13px; color: #888; margin-bottom: 14px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
-.card { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border: 2px solid #ececec; }
-.card-name { font-size: 15px; font-weight: 700; color: #1a1a2e; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
+.card { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border: 2px solid #ececec; position: relative; }
+.card-checkbox { position: absolute; top: 12px; left: 12px; width: 20px; height: 20px; cursor: pointer; }
+.card-name { font-size: 15px; font-weight: 700; color: #1a1a2e; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; margin-top: 20px; }
 .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .card-field .lbl { font-size: 11px; color: #aaa; margin-bottom: 1px; }
 .card-field .val { font-size: 13px; font-weight: 600; color: #333; }
 .state-msg { text-align: center; padding: 60px 20px; color: #aaa; font-size: 15px; }
+.modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+.modal.show { display: flex; }
+.modal-content { background: white; padding: 30px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+.modal-close { float: right; font-size: 24px; cursor: pointer; font-weight: bold; }
+.modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; clear: both; }
+.modal-links { font-family: monospace; font-size: 12px; line-height: 1.8; background: #f5f5f5; padding: 15px; border-radius: 6px; border: 1px solid #ddd; }
+.copy-btn { margin-top: 15px; padding: 10px 20px; background: #1a73e8; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+.copy-btn:hover { background: #1565c0; }
 </style>
 </head>
 <body>
@@ -179,14 +191,28 @@ header h1 { font-size: 20px; font-weight: 700; }
       <input type="number" id="f-waist" placeholder="68">
     </div>
     <button class="btn-search" onclick="applyFilters()">🔍 חפש</button>
+    <button class="btn-reset" onclick="resetFilters()">איפוס סינון</button>
+    <button class="btn-export" id="exportBtn" onclick="showLinks()" disabled>📋 קבל קישורים</button>
   </div>
   <div class="results">
-    <div id="results-header">טוען...</div>
+    <div class="results-header" id="results-header">טוען...</div>
     <div class="grid" id="grid"><div class="state-msg">⏳ טוען...</div></div>
   </div>
 </div>
+
+<div id="linksModal" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <div class="modal-title">📋 קישורים לשליחה</div>
+    <div class="modal-links" id="linksText"></div>
+    <button class="copy-btn" onclick="copyToClipboard()">📋 העתק הכל</button>
+  </div>
+</div>
+
 <script>
 let allModels = [];
+let selectedModels = new Set();
+
 async function loadData() {
   try {
     const res = await fetch('/api/models');
@@ -198,6 +224,7 @@ async function loadData() {
     document.getElementById('grid').innerHTML = '<div class="state-msg">שגיאה: ' + e.message + '</div>';
   }
 }
+
 function applyFilters() {
   const results = allModels.filter(m => true);
   const grid = document.getElementById('grid');
@@ -206,8 +233,9 @@ function applyFilters() {
     return;
   }
   document.getElementById('results-header').textContent = results.length + ' דוגמניות נמצאו';
-  grid.innerHTML = results.map(m => `
+  grid.innerHTML = results.map((m, idx) => `
     <div class="card">
+      <input type="checkbox" class="card-checkbox" data-idx="${idx}" onchange="updateSelection()">
       <div class="card-name">${m.Name || m.שם || '—'}</div>
       <div class="card-grid">
         <div class="card-field"><div class="lbl">גובה</div><div class="val">${m.Height || m.גובה || '—'}</div></div>
@@ -218,6 +246,47 @@ function applyFilters() {
     </div>
   `).join('');
 }
+
+function updateSelection() {
+  selectedModels.clear();
+  document.querySelectorAll('.card-checkbox:checked').forEach(cb => {
+    const idx = parseInt(cb.dataset.idx);
+    selectedModels.add(idx);
+  });
+  document.getElementById('exportBtn').disabled = selectedModels.size === 0;
+}
+
+function showLinks() {
+  const links = [];
+  selectedModels.forEach(idx => {
+    const model = allModels[idx];
+    if (model) {
+      links.push(`${model.Name || model.שם} - ${model.URL}`);
+    }
+  });
+  
+  document.getElementById('linksText').textContent = links.join('\n');
+  document.getElementById('linksModal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('linksModal').classList.remove('show');
+}
+
+function copyToClipboard() {
+  const text = document.getElementById('linksText').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    alert('✅ הועתק בהצלחה!');
+  });
+}
+
+function resetFilters() {
+  selectedModels.clear();
+  document.querySelectorAll('.card-checkbox').forEach(cb => cb.checked = false);
+  updateSelection();
+  loadData();
+}
+
 loadData();
 setInterval(() => { if (allModels.length === 0) loadData(); }, 5000);
 </script>
